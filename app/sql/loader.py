@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
-import logging
+from loguru import logger
 from typing import Dict, Optional
 
-logger = logging.getLogger(__name__)
 
 class SQLLoader:
     def __init__(self, sql_directory: str = "app/sql/queries"):
