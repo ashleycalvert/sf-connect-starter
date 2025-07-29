@@ -8,6 +8,7 @@ from cryptography.hazmat.backends import default_backend
 from typing import Dict, Optional
 import httpx
 import os
+from loguru import logger
 
 class SnowflakeKeyPair:
     def __init__(self, account: str, username: str, private_key_path: str, passphrase: Optional[str] = None):
@@ -32,7 +33,9 @@ class SnowflakeKeyPair:
         file_stat = os.stat(self.private_key_path)
         file_permissions = oct(file_stat.st_mode)[-3:]
         if file_permissions not in ['600', '400']:
-            print(f"Warning: Private key file has permissions {file_permissions}. Consider setting to 600 or 400 for security.")
+            logger.warning(
+                f"Private key file has permissions {file_permissions}. Consider setting to 600 or 400 for security."
+            )
         
     def load_private_key(self):
         """Load and decrypt private key from file with passphrase support"""
@@ -65,7 +68,9 @@ class SnowflakeKeyPair:
             sha256_hash = hashlib.sha256(public_key_der).digest()
             self.public_key_fp = base64.b64encode(sha256_hash).decode('utf-8')
             
-            print(f"Successfully loaded encrypted private key. Public key fingerprint: {self.public_key_fp[:20]}...")
+            logger.info(
+                f"Successfully loaded encrypted private key. Public key fingerprint: {self.public_key_fp[:20]}..."
+            )
             
         except ValueError as e:
             if "Bad decrypt" in str(e) or "invalid" in str(e).lower():
@@ -122,7 +127,7 @@ class SnowflakeKeyPair:
             self.load_private_key()
             return True
         except Exception as e:
-            print(f"Key decryption test failed: {e}")
+            logger.error(f"Key decryption test failed: {e}")
             return False
     
     def get_auth_headers(self) -> Dict[str, str]:

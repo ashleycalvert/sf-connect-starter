@@ -5,6 +5,7 @@ from typing import Dict, List, Any, Optional
 from config.settings import settings
 from auth.sso_auth import SnowflakeSSO
 from auth.keypair_auth import SnowflakeKeyPair
+from loguru import logger
 
 class SnowflakeService:
     def __init__(self):
@@ -18,6 +19,7 @@ class SnowflakeService:
         self.auth_client = None
         
         # Initialize authentication client based on method
+        logger.debug(f"Initializing SnowflakeService using auth method: {settings.auth_method}")
         if settings.auth_method == "sso":
             self.auth_client = SnowflakeSSO(
                 account=self.account,
@@ -36,6 +38,7 @@ class SnowflakeService:
     
     async def authenticate(self) -> bool:
         """Authenticate with Snowflake"""
+        logger.debug("Authenticating with Snowflake")
         if isinstance(self.auth_client, SnowflakeSSO):
             return await self.auth_client.authenticate()
         elif isinstance(self.auth_client, SnowflakeKeyPair):
@@ -47,7 +50,11 @@ class SnowflakeService:
     async def execute_sql(self, sql_query: str, parameters: Dict = None) -> Dict[str, Any]:
         """Execute SQL query using Snowflake SQL API"""
         sql_api_url = f"{self.base_url}/api/v2/statements"
-        
+
+        logger.debug(f"Executing SQL: {sql_query}")
+        if parameters:
+            logger.debug(f"With parameters: {parameters}")
+
         # Prepare request payload
         request_data = {
             "statement": sql_query,
@@ -60,7 +67,7 @@ class SnowflakeService:
         
         if parameters:
             request_data["binds"] = parameters
-        
+
         headers = self.auth_client.get_auth_headers()
 
         # print(f"Headers: {headers}")
@@ -88,11 +95,13 @@ class SnowflakeService:
         """Process Snowflake API response"""
         if result.get("code") != "090001":  # Success code
             raise Exception(f"Query failed: {result.get('message')}")
-        
+
         # Extract result data
         rows = result.get("data", [])
         meta = result.get("resultSetMetaData", {})
-        
+
+        logger.debug(f"Query returned {len(rows)} rows")
+
         return {
             "success": True,
             "data": rows,
@@ -109,5 +118,6 @@ class SnowflakeService:
         sql_path = os.path.normpath(sql_path)
         if not os.path.exists(sql_path):
             raise FileNotFoundError(f"SQL file not found: {sql_path}")
+        logger.debug(f"Loading SQL file: {sql_path}")
         with open(sql_path, 'r') as file:
             return file.read().strip()

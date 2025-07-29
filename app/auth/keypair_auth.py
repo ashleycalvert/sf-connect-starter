@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.backends import default_backend
 from typing import Dict, Optional
 import httpx
+from loguru import logger
 
 class SnowflakeKeyPair:
     def __init__(self, account: str, username: str, private_key_path: str, passphrase: str = None):
@@ -49,7 +50,7 @@ class SnowflakeKeyPair:
             sha256_hash = hashlib.sha256(public_key_der).digest()
             self.public_key_fp = base64.b64encode(sha256_hash).decode('utf-8')
             
-            print(f"Successfully loaded encrypted private key. Public key fingerprint: {self.public_key_fp}...")
+            logger.info(f"Successfully loaded encrypted private key. Public key fingerprint: {self.public_key_fp}...")
             
         except Exception as e:
             raise Exception(f"Failed to load private key: {e}")
@@ -60,7 +61,7 @@ class SnowflakeKeyPair:
             self.load_private_key()
             return True
         except Exception as e:
-            print(f"Key decryption test failed: {e}")
+            logger.error(f"Key decryption test failed: {e}")
             return False
     
     def get_public_key_pem(self) -> str:
@@ -91,7 +92,7 @@ class SnowflakeKeyPair:
         qualified_username = f"{self.account.upper()}.{self.username.upper()}"
         issuer = f"{qualified_username}.SHA256:{self.public_key_fp}"
 
-        print(f"Issuer: {issuer}, Qualified Username: {qualified_username}")
+        logger.debug(f"Issuer: {issuer}, Qualified Username: {qualified_username}")
         
         payload = {
             'iss': issuer,
@@ -120,3 +121,4 @@ class SnowflakeKeyPair:
             }
         except Exception as e:
             raise Exception(f"Failed to create authentication headers: {e}")
+

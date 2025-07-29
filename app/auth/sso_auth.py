@@ -2,6 +2,7 @@ import httpx
 import base64
 from typing import Dict, Optional
 import json
+from loguru import logger
 
 class SnowflakeSSO:
     def __init__(self, account: str, username: str, password: str):
@@ -40,11 +41,11 @@ class SnowflakeSSO:
                     self.master_token = data.get("masterToken")
                     return True
                 else:
-                    print(f"Authentication failed: {auth_response.get('message')}")
+                    logger.error(f"Authentication failed: {auth_response.get('message')}")
                     return False
                     
             except Exception as e:
-                print(f"SSO Authentication error: {e}")
+                logger.error(f"SSO Authentication error: {e}")
                 return False
     
     def get_auth_headers(self) -> Dict[str, str]:
@@ -58,3 +59,4 @@ class SnowflakeSSO:
             "Accept": "application/json",
             "User-Agent": "FastAPI-Snowflake-Client/1.0.0"
         }
+
