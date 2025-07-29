@@ -4,7 +4,7 @@ import os
 from typing import Dict, List, Any, Optional
 from config.settings import settings
 from auth.keypair_auth import SnowflakeKeyPair
-from loguru import logger
+from config.logging_config import logger
 
 class SnowflakeService:
     def __init__(self):

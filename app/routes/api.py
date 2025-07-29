@@ -3,7 +3,7 @@ from services.snowflake import SnowflakeService
 from models.schemas import QueryRequest, QueryResponse, HealthResponse, KeyPairInfoResponse
 from config.settings import settings
 from auth.keypair_auth import SnowflakeKeyPair
-from loguru import logger
+from config.logging_config import logger
 
 router = APIRouter()
 

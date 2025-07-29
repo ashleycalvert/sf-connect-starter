@@ -9,5 +9,7 @@ def setup_logging():
                level=settings.log_level,
                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
                enqueue=True)
+    
+    return logger
 
 logger = setup_logging()

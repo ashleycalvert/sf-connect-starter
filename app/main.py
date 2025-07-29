@@ -3,7 +3,6 @@ from routes.api import router
 from config.settings import settings
 from services.snowflake import SnowflakeService
 from config.logging_config import logger
-from loguru import logger
 
 
 app = FastAPI(

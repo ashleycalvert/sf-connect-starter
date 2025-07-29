@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.backends import default_backend
 from typing import Dict, Optional
 import httpx
-from loguru import logger
+from config.logging_config import logger
 
 class SnowflakeKeyPair:
     def __init__(self, account: str, username: str, private_key_path: str, passphrase: str = None):
