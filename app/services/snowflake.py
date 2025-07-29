@@ -3,7 +3,6 @@ import json
 import os
 from typing import Dict, List, Any, Optional
 from config.settings import settings
-from auth.sso_auth import SnowflakeSSO
 from auth.keypair_auth import SnowflakeKeyPair
 from loguru import logger
 
@@ -20,32 +19,15 @@ class SnowflakeService:
         
         # Initialize authentication client based on method
         logger.debug(f"Initializing SnowflakeService using auth method: {settings.auth_method}")
-        if settings.auth_method == "sso":
-            self.auth_client = SnowflakeSSO(
-                account=self.account,
-                username=settings.sso_username,
-                password=settings.sso_password
-            )
-        elif settings.auth_method == "keypair":
-            self.auth_client = SnowflakeKeyPair(
-                account=self.account,
-                username=settings.keypair_username,
-                private_key_path=settings.private_key_path,
-                passphrase=settings.private_key_passphrase
-            )
-        else:
-            raise ValueError(f"Unsupported auth method: {settings.auth_method}")
+        self.auth_client = SnowflakeKeyPair(
+            account=self.account,
+            username=settings.keypair_username,
+            private_key_path=settings.private_key_path,
+            passphrase=settings.private_key_passphrase
+        )
     
     async def authenticate(self) -> bool:
-        """Authenticate with Snowflake"""
-        logger.debug("Authenticating with Snowflake")
-        if isinstance(self.auth_client, SnowflakeSSO):
-            return await self.auth_client.authenticate()
-        elif isinstance(self.auth_client, SnowflakeKeyPair):
-            # For encrypted key pair, test key decryption during authentication
-            return self.auth_client.test_key_decryption()
-        else:
-            return True
+        return self.auth_client.test_key_decryption()
     
     async def execute_sql(self, sql_query: str, parameters: Dict = None) -> Dict[str, Any]:
         """Execute SQL query using Snowflake SQL API"""
