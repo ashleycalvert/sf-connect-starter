@@ -2,11 +2,9 @@ from fastapi import FastAPI
 from routes.api import router
 from config.settings import settings
 from services.snowflake import SnowflakeService
-from config.logging_config import setup_logging
+from config.logging_config import logger
 from loguru import logger
 
-# Configure logging using Loguru
-setup_logging()
 
 app = FastAPI(
     title="Snowflake SQL API Backend",

@@ -10,3 +10,4 @@ def setup_logging():
                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
                enqueue=True)
 
+logger = setup_logging()
