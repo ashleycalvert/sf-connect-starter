@@ -6,7 +6,7 @@ def setup_logging():
     """Configure Loguru logging"""
     logger.remove()
     logger.add(sys.stdout,
-               level=settings.log_level,
+               level=getattr(settings, 'log_level', 'INFO'),
                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
                enqueue=True)
 
