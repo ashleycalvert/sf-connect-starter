@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from services.snowflake import SnowflakeService
 from models.schemas import QueryRequest, QueryResponse, HealthResponse, KeyPairInfoResponse
 from config.settings import settings
@@ -105,17 +105,24 @@ async def execute_query(
 @router.get("/query/{sql_filename}")
 async def execute_query_get(
     sql_filename: str,
+    request: Request,
     snowflake_service: SnowflakeService = Depends(get_snowflake_service)
 ):
-    """Execute SQL query from file via GET request"""
+    """Execute SQL query from file via GET request with optional query parameters"""
     try:
         # Add .sql extension if not present
         if not sql_filename.endswith('.sql'):
             sql_filename += '.sql'
         logger.debug(f"Executing GET query from file: {sql_filename}")
         sql_query = snowflake_service.load_sql_file(sql_filename)
-        result = await snowflake_service.execute_sql(sql_query)
-        
+
+        # Pass any query parameters to the Snowflake execution
+        parameters = dict(request.query_params)
+        result = await snowflake_service.execute_sql(
+            sql_query,
+            parameters if parameters else None,
+        )
+
         return QueryResponse(**result)
         
     except FileNotFoundError as e:

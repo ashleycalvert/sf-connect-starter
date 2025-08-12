@@ -44,34 +44,67 @@ class SnowflakeService:
             "database": self.database,
             "schema": self.schema,
             "warehouse": self.warehouse,
-            "role": self.role
+            "role": self.role,
         }
-        
+
         if parameters:
-            request_data["binds"] = parameters
+            request_data["bindings"] = self._format_bindings(parameters)
 
         headers = self.auth_client.get_auth_headers()
 
-        # print(f"Headers: {headers}")
-        # print(f"Request Data: {request_data}")
-        
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:
                 response = await client.post(
                     sql_api_url,
                     json=request_data,
-                    headers=headers
+                    headers=headers,
                 )
                 response.raise_for_status()
-                
+
                 result = response.json()
                 return self._process_result(result)
-                
+
             except httpx.HTTPStatusError as e:
                 error_detail = e.response.text if e.response else str(e)
-                raise Exception(f"Snowflake API error: {e.response.status_code} - {error_detail}")
+                raise Exception(
+                    f"Snowflake API error: {e.response.status_code} - {error_detail}"
+                )
             except Exception as e:
                 raise Exception(f"Query execution error: {e}")
+
+    def _format_bindings(self, parameters: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+        """Convert simple parameter dict into Snowflake bindings format."""
+        bindings: Dict[str, Dict[str, str]] = {}
+        for index, value in enumerate(parameters.values(), start=1):
+            bindings[str(index)] = self._determine_binding(value)
+        return bindings
+
+    @staticmethod
+    def _determine_binding(value: Any) -> Dict[str, str]:
+        """Infer Snowflake binding type for a value."""
+        binding_type = "TEXT"
+        binding_value: Any = value
+
+        if isinstance(value, bool):
+            binding_type = "BOOLEAN"
+            binding_value = str(value).lower()
+        else:
+            try:
+                int_val = int(value)
+                if str(int_val) == str(value):
+                    binding_type = "FIXED"
+                    binding_value = str(int_val)
+                else:
+                    raise ValueError
+            except (ValueError, TypeError):
+                try:
+                    float_val = float(value)
+                    binding_type = "REAL"
+                    binding_value = str(float_val)
+                except (ValueError, TypeError):
+                    binding_value = str(value)
+
+        return {"type": binding_type, "value": binding_value}
     
     def _process_result(self, result: Dict) -> Dict[str, Any]:
         """Process Snowflake API response"""
