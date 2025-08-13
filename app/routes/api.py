@@ -1,19 +1,21 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from services.snowflake import SnowflakeService
-from models.schemas import QueryRequest, QueryResponse, HealthResponse, KeyPairInfoResponse
+from models.schemas import (
+    QueryRequest,
+    QueryResponse,
+    HealthResponse,
+    KeyPairInfoResponse,
+)
 from config.settings import settings
 from auth.keypair_auth import SnowflakeKeyPair
 from config.logging_config import logger
 
 router = APIRouter()
 
+
 # Dependency to get Snowflake service
-async def get_snowflake_service():
-    service = SnowflakeService()
-    if not await service.authenticate():
-        logger.error("Authentication failed")
-        raise HTTPException(status_code=401, detail="Authentication failed")
-    return service
+async def get_snowflake_service(request: Request) -> SnowflakeService:
+    return request.app.state.snowflake_service
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -58,26 +60,29 @@ async def get_keypair_info():
         raise HTTPException(status_code=500, detail=f"Error processing key pair: {str(e)}")
 
 @router.post("/test-auth")
-async def test_authentication():
+async def test_authentication(
+    snowflake_service: SnowflakeService = Depends(get_snowflake_service),
+):
     """Test authentication without executing any queries"""
     try:
-        service = SnowflakeService()
-        auth_success = await service.authenticate()
-        
+        auth_success = await snowflake_service.authenticate()
+
         if auth_success:
             return {
                 "success": True,
                 "message": "Authentication successful",
                 "auth_method": settings.auth_method,
-                "account": settings.snowflake_account
+                "account": settings.snowflake_account,
             }
         else:
             logger.error("Authentication failed")
             raise HTTPException(status_code=401, detail="Authentication failed")
-            
+
     except Exception as e:
         logger.error(f"Authentication error: {e}")
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Authentication error: {str(e)}"
+        )
 
 @router.post("/query", response_model=QueryResponse)
 async def execute_query(
