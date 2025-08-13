@@ -38,7 +38,50 @@ class SnowflakeService:
 
     async def close(self) -> None:
         await self.client.aclose()
-    
+
+    async def _validate_sql(
+        self, sql_query: str, parameters: Dict = None
+    ) -> None:
+        """Validate the SQL statement using Snowflake's EXPLAIN.
+
+        This checks that the statement is syntactically correct and can be
+        processed by Snowflake with the supplied bind parameters.  The query is
+        not executed; only its plan is retrieved.
+        """
+
+        sql_api_url = f"{self.base_url}/api/v2/statements"
+
+        explain_query = f"EXPLAIN {sql_query}"
+        request_data = {
+            "statement": explain_query,
+            "timeout": 60,
+            "database": self.database,
+            "schema": self.schema,
+            "warehouse": self.warehouse,
+            "role": self.role,
+        }
+
+        if parameters:
+            request_data["bindings"] = self._format_bindings(parameters)
+
+        headers = self.auth_client.get_auth_headers()
+
+        try:
+            response = await self.client.post(
+                sql_api_url, json=request_data, headers=headers
+            )
+            response.raise_for_status()
+            result = response.json()
+            if result.get("code") != "090001":
+                raise Exception(result.get("message", "SQL validation failed"))
+        except httpx.HTTPStatusError as e:
+            error_detail = e.response.text if e.response else str(e)
+            raise Exception(
+                f"Snowflake API error during validation: {e.response.status_code} - {error_detail}"
+            )
+        except Exception as e:
+            raise Exception(f"SQL validation error: {e}")
+
     async def execute_sql(
         self,
         sql_query: str,
@@ -59,6 +102,9 @@ class SnowflakeService:
         logger.debug(f"Executing SQL: {sql_query}")
         if parameters:
             logger.debug(f"With parameters: {parameters}")
+
+        # Validate the SQL before execution
+        await self._validate_sql(sql_query, parameters)
 
         # Prepare request payload.  The ``timeout`` parameter here tells
         # Snowflake how long to wait before returning a statement handle
