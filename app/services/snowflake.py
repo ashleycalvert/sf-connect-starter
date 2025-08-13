@@ -3,7 +3,7 @@ import httpx
 import json
 import os
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from config.settings import settings
 from auth.keypair_auth import SnowflakeKeyPair
@@ -38,7 +38,56 @@ class SnowflakeService:
 
     async def close(self) -> None:
         await self.client.aclose()
-    
+
+    async def _post_statement(
+        self, sql: str, parameters: Optional[Dict] = None
+    ) -> Tuple[Dict[str, Any], int]:
+        """Submit a SQL statement to the Snowflake API and return the JSON result and status code."""
+
+        sql_api_url = f"{self.base_url}/api/v2/statements"
+        request_data = {
+            "statement": sql,
+            "timeout": 60,
+            "database": self.database,
+            "schema": self.schema,
+            "warehouse": self.warehouse,
+            "role": self.role,
+        }
+
+        if parameters:
+            request_data["bindings"] = self._format_bindings(parameters)
+
+        headers = self.auth_client.get_auth_headers()
+        response = await self.client.post(
+            sql_api_url, json=request_data, headers=headers
+        )
+        response.raise_for_status()
+        return response.json(), response.status_code
+
+    async def _validate_sql(
+        self, sql_query: str, parameters: Optional[Dict] = None
+    ) -> None:
+        """Validate the SQL statement using Snowflake's EXPLAIN.
+
+        This checks that the statement is syntactically correct and can be
+        processed by Snowflake with the supplied bind parameters. The query is
+        not executed; only its plan is retrieved.
+        """
+
+        try:
+            result, _ = await self._post_statement(
+                f"EXPLAIN {sql_query}", parameters
+            )
+            if result.get("code") != "090001":
+                raise Exception(result.get("message", "SQL validation failed"))
+        except httpx.HTTPStatusError as e:
+            error_detail = e.response.text if e.response else str(e)
+            raise Exception(
+                f"Snowflake API error during validation: {e.response.status_code} - {error_detail}"
+            )
+        except Exception as e:
+            raise Exception(f"SQL validation error: {e}")
+
     async def execute_sql(
         self,
         sql_query: str,
@@ -54,42 +103,20 @@ class SnowflakeService:
         total execution time exceeds ``timeout`` seconds.
         """
 
-        sql_api_url = f"{self.base_url}/api/v2/statements"
-
         logger.debug(f"Executing SQL: {sql_query}")
         if parameters:
             logger.debug(f"With parameters: {parameters}")
 
-        # Prepare request payload.  The ``timeout`` parameter here tells
-        # Snowflake how long to wait before returning a statement handle
-        # for asynchronous polling.
-        request_data = {
-            "statement": sql_query,
-            "timeout": 60,
-            "database": self.database,
-            "schema": self.schema,
-            "warehouse": self.warehouse,
-            "role": self.role,
-        }
-
-        if parameters:
-            request_data["bindings"] = self._format_bindings(parameters)
-
+        # Validate the SQL before execution
+        await self._validate_sql(sql_query, parameters)
         headers = self.auth_client.get_auth_headers()
 
         try:
-            response = await self.client.post(
-                sql_api_url,
-                json=request_data,
-                headers=headers,
-            )
-            response.raise_for_status()
-
-            result = response.json()
+            result, status_code = await self._post_statement(sql_query, parameters)
             handle = result.get("statementHandle")
 
             # If the query is still running, poll for completion
-            if response.status_code == 202 or result.get("code") == "333333":
+            if status_code == 202 or result.get("code") == "333333":
                 result = await self._poll_for_result(handle, headers, poll_interval, timeout)
 
             # Fetch additional pages if present
