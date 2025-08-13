@@ -1,7 +1,10 @@
+import asyncio
 import httpx
 import json
 import os
+import time
 from typing import Dict, List, Any, Optional
+
 from config.settings import settings
 from auth.keypair_auth import SnowflakeKeyPair
 from config.logging_config import logger
@@ -36,15 +39,30 @@ class SnowflakeService:
     async def close(self) -> None:
         await self.client.aclose()
     
-    async def execute_sql(self, sql_query: str, parameters: Dict = None) -> Dict[str, Any]:
-        """Execute SQL query using Snowflake SQL API"""
+    async def execute_sql(
+        self,
+        sql_query: str,
+        parameters: Dict = None,
+        poll_interval: float = 1.0,
+        timeout: float = 60.0,
+    ) -> Dict[str, Any]:
+        """Execute SQL query using Snowflake SQL API with polling and pagination.
+
+        If the query does not complete within the Snowflake API timeout window
+        the statement handle is used to poll for completion.  The result set is
+        automatically paginated and a cancellation request is issued if the
+        total execution time exceeds ``timeout`` seconds.
+        """
+
         sql_api_url = f"{self.base_url}/api/v2/statements"
 
         logger.debug(f"Executing SQL: {sql_query}")
         if parameters:
             logger.debug(f"With parameters: {parameters}")
 
-        # Prepare request payload
+        # Prepare request payload.  The ``timeout`` parameter here tells
+        # Snowflake how long to wait before returning a statement handle
+        # for asynchronous polling.
         request_data = {
             "statement": sql_query,
             "timeout": 60,
@@ -68,6 +86,14 @@ class SnowflakeService:
             response.raise_for_status()
 
             result = response.json()
+            handle = result.get("statementHandle")
+
+            # If the query is still running, poll for completion
+            if response.status_code == 202 or result.get("code") == "333333":
+                result = await self._poll_for_result(handle, headers, poll_interval, timeout)
+
+            # Fetch additional pages if present
+            result = await self._fetch_all_pages(result, handle, headers)
             return self._process_result(result)
 
         except httpx.HTTPStatusError as e:
@@ -111,6 +137,68 @@ class SnowflakeService:
                     binding_value = str(value)
 
         return {"type": binding_type, "value": binding_value}
+
+    async def _poll_for_result(
+        self,
+        handle: str,
+        headers: Dict[str, str],
+        poll_interval: float,
+        timeout: float,
+    ) -> Dict[str, Any]:
+        """Poll Snowflake for completion of an asynchronous statement."""
+        status_url = f"{self.base_url}/api/v2/statements/{handle}"
+        start_time = time.monotonic()
+
+        while True:
+            if time.monotonic() - start_time > timeout:
+                await self._cancel_query(handle, headers)
+                raise TimeoutError("Snowflake query timed out and was cancelled")
+
+            poll_resp = await self.client.get(status_url, headers=headers)
+            poll_resp.raise_for_status()
+            result = poll_resp.json()
+
+            status = result.get("status")
+            if isinstance(status, dict):
+                status = status.get("status")
+
+            if status in ("SUCCESS", "SUCCEEDED"):
+                return result
+            if status in ("FAILED", "ABORTED", "FAILED_WITH_ERROR"):
+                raise Exception(f"Query failed: {result.get('message')}")
+
+            await asyncio.sleep(poll_interval)
+
+    async def _fetch_all_pages(
+        self,
+        result: Dict[str, Any],
+        handle: Optional[str],
+        headers: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Retrieve all pages of a result set using nextPageToken."""
+        rows = result.get("data", [])
+        meta = result.get("resultSetMetaData", {})
+        next_token = result.get("nextPageToken")
+
+        while handle and next_token:
+            page_url = f"{self.base_url}/api/v2/statements/{handle}?page={next_token}"
+            page_resp = await self.client.get(page_url, headers=headers)
+            page_resp.raise_for_status()
+            page = page_resp.json()
+            rows.extend(page.get("data", []))
+            next_token = page.get("nextPageToken")
+
+        result["data"] = rows
+        result["resultSetMetaData"] = meta
+        return result
+
+    async def _cancel_query(self, handle: str, headers: Dict[str, str]) -> None:
+        """Attempt to cancel a running statement."""
+        cancel_url = f"{self.base_url}/api/v2/statements/{handle}/cancel"
+        try:
+            await self.client.post(cancel_url, headers=headers)
+        except Exception as e:
+            logger.error(f"Failed to cancel statement {handle}: {e}")
     
     def _process_result(self, result: Dict) -> Dict[str, Any]:
         """Process Snowflake API response"""
